@@ -44,11 +44,37 @@ KEEP_THRESHOLD = 0.58
 DROP_THRESHOLD = 0.40
 
 REFERENCE_SENTENCES = [
-    "The Indian government ordered a website or app blocked under Section 69A of the IT Act.",
-    "A court in India issued an order to take down or block online content.",
-    "MeitY published a compliance report or blocking order affecting online platforms.",
-    "A social media account was withheld or restricted specifically in India following a legal request.",
-    "Content was removed from a platform in India under the IT Rules 2021.",
+    # Grounded in SFLC.IN's documented blocking-order dataset — one sentence
+    # per real recurring category, weighted toward the categories the
+    # original 5-sentence set was blind to (national security app bans,
+    # piracy, and police public-order account withholding together account
+    # for ~80% of documented blocking activity).
+    "The Indian government or MeitY banned a mobile app or website citing "
+    "national security or sovereignty concerns, similar to the bans on "
+    "Chinese apps like TikTok, WeChat, and PUBG.",
+    "The Delhi High Court or another Indian court ordered a piracy or "
+    "torrent website blocked for hosting pirated movies, shows, or "
+    "copyrighted content.",
+    "An Indian state police cyber crime unit, such as Kerala Police, "
+    "Telangana Police, or Tamil Nadu Police, had a Twitter or social media "
+    "account or post withheld citing public order, unrest, or a local law "
+    "enforcement request.",
+    "The Ministry of Information and Broadcasting ordered an adult content "
+    "or OTT streaming app blocked in India for hosting obscene or sexually "
+    "explicit material.",
+    "Indian police or the government blocked a betting, gambling, or "
+    "real-money gaming website or app for illegal betting.",
+    "An Indian court or police ordered a tweet, Instagram post, or YouTube "
+    "video taken down following a defamation complaint.",
+    "MeitY or another Indian government body issued a formal blocking "
+    "order against a website, app, or social media account under the IT "
+    "Act or IT Rules, 2021.",
+    "An Indian authority blocked a website for trademark infringement or "
+    "online fraud.",
+    "A social media account was withheld or restricted specifically in "
+    "India following a legal or court order.",
+    "Content was removed from a platform in India under the IT Rules 2021 "
+    "or a government or court directive.",
 ]
 
 
@@ -114,11 +140,16 @@ def tier2_gemini_check(text, api_key):
         "Does this tweet directly report, describe, or discuss a SPECIFIC "
         "content-blocking, website/app-blocking, account-withholding, or "
         "takedown action taken by an Indian government body, court, or "
-        "platform acting under Indian law (Section 69A/79 IT Act, IT Rules "
-        "2021, MeitY, the Sahyog portal, the Grievance Appellate Committee, "
-        "or a named blocking/takedown order)? Reporting on or analyzing a "
-        "real blocking/takedown trend (e.g. aggregate statistics on order "
-        "volume) counts as YES even without naming one specific instance.\n\n"
+        "police unit? This includes (not just the IT-Act/MeitY framing): "
+        "national-security app bans (like the Chinese app bans), Delhi "
+        "High Court or other court orders against piracy/torrent sites, "
+        "state police cyber crime units withholding accounts for public "
+        "order/local law reasons, Ministry of Information & Broadcasting "
+        "action against obscene-content apps, blocks on illegal betting/"
+        "gambling sites, and defamation-driven takedowns of specific posts. "
+        "Reporting on or analyzing a real blocking/takedown trend (e.g. "
+        "aggregate statistics on order volume) counts as YES even without "
+        "naming one specific instance.\n\n"
         "Answer NO if the tweet:\n"
         "- uses a similarly-worded but unrelated law (Income Tax Act "
         "Section 69A on unexplained money, GST Section 69, or any non-IT-Act "
