@@ -18,7 +18,19 @@ queries:
   - "X Corp withheld India"
   - "internet shutdown order India"
   - "app banned India government"
+  - "\"national security\" app banned India MeitY"
   - "VPN banned India"
+  # The six queries below fill gaps identified directly from SFLC.IN's
+  # documented blocking-order dataset — these categories together account
+  # for the large majority of real blocking activity but had zero targeted
+  # coverage before: piracy/copyright (Delhi HC), police-ordered account
+  # withholding for public order (a structurally different category from
+  # MeitY/political blocking), illegal betting, obscenity, and defamation.
+  - "\"Delhi High Court\" piracy website blocked India"
+  - "(\"Kerala Police\" OR \"Telangana Police\" OR \"Tamil Nadu Police\") Twitter account withheld"
+  - "illegal betting website blocked India police"
+  - "\"Ministry of Information\" app banned obscene India"
+  - "tweet taken down India defamation court order"
   - "\"compliance report\" (MeitY OR \"IT Rules\" OR intermediary OR Meta OR Google OR YouTube OR Instagram OR X.com)"
   - "\"grievance officer\" (\"IT Rules\" OR MeitY OR takedown OR blocking OR intermediary) -refund -delivery -order#"
   - "Grievance Appellate Committee order"
