@@ -2,8 +2,8 @@
 # a separate call, and search is the least stable twitter-cli command.
 # Start narrow, widen once you see what fires.
 queries:
-  - "Section 69A"
-  - "Section 79 IT Act"
+  - "\"Section 69A\" (\"IT Act\" OR MeitY OR blocked OR blocking OR withheld OR takedown) -\"income tax\" -ITAT -\"unexplained money\" -GST"
+  - "\"Section 79 IT Act\""
   - "MeitY blocking order"
   - "MeitY advisory"
   - "IT Rules 2021 takedown"
@@ -19,17 +19,26 @@ queries:
   - "internet shutdown order India"
   - "app banned India government"
   - "VPN banned India"
-  - "compliance report IT Rules"
-  - "grievance officer order India"
+  - "\"compliance report\" (MeitY OR \"IT Rules\" OR intermediary OR Meta OR Google OR YouTube OR Instagram OR X.com)"
+  - "\"grievance officer\" (\"IT Rules\" OR MeitY OR takedown OR blocking OR intermediary) -refund -delivery -order#"
   - "Grievance Appellate Committee order"
-  - "sealed cover order IT Rules"
+  - "\"sealed cover\" (MeitY OR \"IT Rules\" OR blocking OR intermediary OR India)"
   - "intermediary liability India order"
   - "safe harbour India court"
   - "deepfake takedown order India"
   - "fact check unit order"
+  # Weak signal in practice — mostly generic privacy/political commentary,
+  # not actual DPDP-driven takedowns. Consider dropping or reframing around
+  # what you're actually trying to catch here (data-protection-order-driven
+  # removal is real but rare; the current phrasing doesn't find it).
   - "DPDP Act takedown"
+  # Same — mostly generic political noise reusing "Election Commission" and
+  # "content" separately rather than describing an actual EC-ordered removal.
   - "election commission content removal India"
-  - "satellite broadband blocked India"
+  # Was returning only generic telecom/airline customer-service auto-replies
+  # that don't mention satellite broadband at all — narrowed to the actual
+  # providers this is meant to track.
+  - "(Starlink OR \"JioSpaceFiber\" OR OneWeb) (blocked OR banned OR restricted OR license) India"
   - "OTT platform blocked India"
   - "press freedom takedown India"
   - "journalist account blocked India"
