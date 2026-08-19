@@ -62,6 +62,163 @@ jobs:
 
       - name: Install twitter-cli
         run: |
+          pip install --no-cache-dir twitter-cli
+          twitter --help >/dev/null
+
+      # Known upstream bug (github.com/jackwener/twitter-cli): the
+      # ClientTransaction bootstrap fetches bare, cookie-less https://x.com,
+      # but X moved that page to a different frontend with no webpack chunk
+      # map, breaking the regex the library needs. Patches the bootstrap to
+      # hit /home with cookies instead, which still runs the old app.
+      # Remove this step once upstream ships a real fix — see fetch/patch_twitter_cli.py.
+      - name: Patch twitter-cli ClientTransaction bootstrap
+        run: python fetch/patch_twitter_cli.py
+
+      - name: Install fetch dependencies
+        run: pip install --no-cache-dir -r fetch/requirements.txt
+
+      - name: Fetch tweets
+        env:
+          TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+          TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+          CONFIG_PATH: config/keywords.yaml
+          RAW_OUTPUT_PATH: ${{ env.RAW_PATH }}
+        run: python fetch/fetch_tweets.py
+
+      - name: Commit raw dump to raw-data branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          mkdir /tmp/raw-data && cd /tmp/raw-data
+          git init -q
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          if git ls-remote --exit-code --heads origin raw-data >/dev/null 2>&1; then
+            git fetch -q origin raw-data
+            git checkout -q raw-data
+          else
+            git checkout -q --orphan raw-data
+          fi
+          mkdir -p raw
+          cp "$GITHUB_WORKSPACE/${{ env.RAW_PATH }}" raw/
+          git add raw/
+          git -c user.name="github-actions[bot]" \
+              -c user.email="github-actions[bot]@users.noreply.github.com" \
+              commit -m "raw dump: run ${{ env.RUN_ID }}" || echo "nothing to commit"
+          git push -q origin raw-data
+
+      # CPU-only torch first so sentence-transformers doesn't drag in the
+      # CUDA build (same reasoning the old Lambda Dockerfile had).
+      - name: Install gate dependencies
+        run: |
+          pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir -r process/requirements.txt
+
+      - name: Run relevance gate
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          RAW_INPUT_PATH: ${{ env.RAW_PATH }}
+          FAILED_OUTPUT_PATH: failed-items.json
+        run: python process/gate_tweets.py
+
+      - name: Upload failed items (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-items-${{ env.RUN_ID }}
+          path: failed-items.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: File or update health issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Twitter pipeline run failed"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          existing=$(gh issue list --repo ${{ github.repository }} --search "$TITLE in:title" --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            gh issue comment "$existing" --repo ${{ github.repository }} --body "Failed again: $RUN_URL"
+          else
+            gh issue create --repo ${{ github.repository }} --title "$TITLE" --body "$RUN_URL"
+          fi
+
+      - name: Close health issue on recovery
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Twitter pipeline run failed"
+          existing=$(gh issue list --repo ${{ github.repository }} --search "$TITLE in:title" --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            gh issue close "$existing" --repo ${{ github.repository }} --comment "Recovered: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          finame: twitter-pipeline
+
+# Replaces: ECS Fargate + EventBridge Scheduler (fetch), SQS + Lambda
+# (relevance gate), S3 (raw landing), Secrets Manager, SNS + CloudWatch
+# alarm. Runs both steps sequentially in one job — at this volume (a few
+# hundred tweets per run) the queue/Lambda split bought isolation you don't
+# need; a per-item try/except in gate_tweets.py gets you the same thing.
+#
+# One-time setup:
+#   1. Run infra/schema.sql once against your Supabase project (SQL editor,
+#      or psql against SUPABASE_DB_URL) — same schema, same conventions as
+#      the CERC pipeline. Confirm the `vector` extension is enabled first
+#      (Database -> Extensions in the Supabase dashboard).
+#   2. Repo secrets (Settings -> Secrets and variables -> Actions):
+#        TWITTER_AUTH_TOKEN, TWITTER_CT0   - from the Cookie-Editor export
+#        PROXY_URL                          - Webshare proxy URL
+#        SUPABASE_DB_URL                    - postgresql://... connection string
+#        GEMINI_API_KEY                     - free tier is fine
+#   3. Confirm twitter-cli's package name + subcommands (search / user-posts
+#      / --json) still match your Agent Reach build before relying on this
+#      (same caveat as the old Dockerfile carried).
+#
+# Health signal: a failed run fails the whole job (fetch raises SystemExit
+# on zero results, same as before) — GitHub emails watchers by default, and
+# the last step here also files/updates a tracking issue so it's visible
+# even if email notifications are off.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # to push the raw dump to the raw-data branch
+  issues: write      # to file/update the health issue on failure
+
+jobs:
+  fetch-and-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set run id
+        run: |
+          id="$(date -u +%Y%m%dT%H%M%SZ)"
+          echo "RUN_ID=$id" >> "$GITHUB_ENV"
+          echo "RAW_PATH=raw/$id.json" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # Cached across runs so the ~90MB all-MiniLM-L6-v2 weights aren't
+      # re-downloaded from huggingface.co four times a day — same rationale
+      # as baking them into the old Lambda image, just cache instead of bake.
+      - name: Cache sentence-transformers model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2
+
+      - name: Install twitter-cli
+        run: |
           pipx install twitter-cli
           twitter --help >/dev/null
 
