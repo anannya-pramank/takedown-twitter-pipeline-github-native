@@ -40,8 +40,8 @@ import psycopg2
 import requests
 from sentence_transformers import SentenceTransformer, util
 
-KEEP_THRESHOLD = 0.55
-DROP_THRESHOLD = 0.30
+KEEP_THRESHOLD = 0.62
+DROP_THRESHOLD = 0.35
 
 REFERENCE_SENTENCES = [
     "The Indian government ordered a website or app blocked under Section 69A of the IT Act.",
@@ -98,12 +98,37 @@ def tier1_score(text, model, reference_embeddings):
 def tier2_gemini_check(text, api_key):
     """Single short call — asks for one word back to keep token usage minimal.
     Raises on transport/HTTP/parse errors; the caller decides what to do with
-    a failure (here: keep for human review)."""
+    a failure (here: keep for human review).
+
+    Exclusions below are anchored to real false positives observed in
+    production, not hypothetical ones: "Section 69A" collides with the
+    unrelated Income Tax Act provision constantly; generic e-commerce
+    complaints ("Grievance Officer, I am writing to lodge a complaint
+    regarding Order #...") share vocabulary with the IT Rules' Grievance
+    Officer mechanism; org accounts tracked via handles (IFF, SFLC, PUCL)
+    post heavily about adjacent-but-different topics (privacy law, arrests,
+    unrelated litigation) that share keywords without describing an actual
+    block/takedown."""
     prompt = (
-        "Reply with exactly one word, YES or NO. "
-        "Is this tweet about an Indian government or court content takedown, "
-        "website/app block, or account restriction order?\n\n"
-        f"Tweet: {text[:500]}"
+        "Reply with exactly one word, YES or NO.\n\n"
+        "Does this tweet directly report, describe, or discuss a SPECIFIC "
+        "content-blocking, website/app-blocking, account-withholding, or "
+        "takedown action taken by an Indian government body, court, or "
+        "platform acting under Indian law (Section 69A/79 IT Act, IT Rules "
+        "2021, MeitY, the Sahyog portal, the Grievance Appellate Committee, "
+        "or a named blocking/takedown order)? Reporting on or analyzing a "
+        "real blocking/takedown trend (e.g. aggregate statistics on order "
+        "volume) counts as YES even without naming one specific instance.\n\n"
+        "Answer NO if the tweet:\n"
+        "- uses a similarly-worded but unrelated law (Income Tax Act "
+        "Section 69A on unexplained money, GST Section 69, or any non-IT-Act "
+        "statute)\n"
+        "- is a generic e-commerce or customer-service complaint, even if "
+        "it uses the phrase \"grievance officer\" or \"order\"\n"
+        "- is about a country other than India\n"
+        "- discusses privacy law, digital rights, arrests, or litigation "
+        "generally without describing an actual content block or takedown\n\n"
+        f"Tweet: {text[:600]}"
     )
     resp = requests.post(
         "https://generativelanguage.googleapis.com/v1beta/models/"
