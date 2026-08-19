@@ -53,8 +53,18 @@ REFERENCE_SENTENCES = [
 
 
 def get_db_connection():
+    """Connect with discrete parameters rather than a single DSN string.
+    Supabase-generated passwords routinely contain characters like `%`, `@`,
+    or `/` that are only safe inside a postgresql:// URI if percent-encoded
+    — a single wrong character breaks the DSN parser. Passing password as
+    its own keyword argument sidesteps that entirely; psycopg2 takes it as
+    a plain string with no URI parsing involved."""
     return psycopg2.connect(
-        os.environ["DATABASE_URL"],
+        host=os.environ["SUPABASE_DB_HOST"],
+        port=os.environ.get("SUPABASE_DB_PORT", "5432"),
+        dbname=os.environ.get("SUPABASE_DB_NAME", "postgres"),
+        user=os.environ["SUPABASE_DB_USER"],
+        password=os.environ["SUPABASE_DB_PASSWORD"],
         # Supabase enforces TLS; fail loudly instead of silently connecting
         # in plaintext if that ever changes.
         sslmode="require",
