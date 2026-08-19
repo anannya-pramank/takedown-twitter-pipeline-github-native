@@ -40,8 +40,8 @@ import psycopg2
 import requests
 from sentence_transformers import SentenceTransformer, util
 
-KEEP_THRESHOLD = 0.62
-DROP_THRESHOLD = 0.35
+KEEP_THRESHOLD = 0.58
+DROP_THRESHOLD = 0.40
 
 REFERENCE_SENTENCES = [
     "The Indian government ordered a website or app blocked under Section 69A of the IT Act.",
