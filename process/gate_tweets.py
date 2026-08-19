@@ -58,11 +58,16 @@ def get_db_connection():
     or `/` that are only safe inside a postgresql:// URI if percent-encoded
     — a single wrong character breaks the DSN parser. Passing password as
     its own keyword argument sidesteps that entirely; psycopg2 takes it as
-    a plain string with no URI parsing involved."""
+    a plain string with no URI parsing involved.
+
+    Uses `or` rather than os.environ.get(key, default): an unset GitHub
+    Actions secret still creates the env var, just as an empty string, so
+    the key is always "present" and dict.get's default never actually
+    fires. `or` falls back on any falsy value, empty string included."""
     return psycopg2.connect(
         host=os.environ["SUPABASE_DB_HOST"],
-        port=os.environ.get("SUPABASE_DB_PORT", "5432"),
-        dbname=os.environ.get("SUPABASE_DB_NAME", "postgres"),
+        port=os.environ.get("SUPABASE_DB_PORT") or "5432",
+        dbname=os.environ.get("SUPABASE_DB_NAME") or "postgres",
         user=os.environ["SUPABASE_DB_USER"],
         password=os.environ["SUPABASE_DB_PASSWORD"],
         # Supabase enforces TLS; fail loudly instead of silently connecting
@@ -165,13 +170,31 @@ def process_item(item, model, reference_embeddings, gemini_api_key, cur):
                 if not is_relevant:
                     return "dropped"
 
+    author = item.get("author")
+    if isinstance(author, dict):
+        # twitter-cli's actual shape: {"id", "name", "screenName", ...} —
+        # not a plain string, so pull the handle out rather than handing
+        # the whole dict to psycopg2 (which can't adapt it to a text column).
+        author_handle = author.get("screenName") or author.get("name")
+    else:
+        author_handle = author or item.get("username")
+
+    # X's permalink structure is predictable, so build one rather than
+    # leaving url NULL — there's no top-level "url" field in this shape;
+    # "urls" is a list of links *mentioned in* the tweet, not the tweet's
+    # own permalink.
+    url = (f"https://x.com/{author_handle}/status/{tweet_id}"
+           if author_handle else None)
+
     row = {
         "id": sha1_id(tweet_id),
         "tweet_id": tweet_id,
-        "author_handle": item.get("author") or item.get("username"),
+        "author_handle": author_handle,
         "text": text,
-        "url": item.get("url"),
-        "posted_at": item.get("created_at") or item.get("posted_at"),
+        "url": url,
+        # twitter-cli returns createdAt/createdAtISO (camelCase), not
+        # created_at/posted_at — this was silently NULL on every row before.
+        "posted_at": item.get("createdAtISO") or item.get("createdAt"),
         "source_type": item["_source_type"],
         "source_value": item["_source_value"],
         "run_id": item["_run_id"],
