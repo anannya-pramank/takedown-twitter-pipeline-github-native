@@ -55,8 +55,15 @@ def build_child_env():
 
 
 def run_twitter_cli(args, env, timeout=30):
-    """Runs a twitter-cli command, returns parsed JSON or None on failure.
-    Never raises — a single failed call must not kill the whole run."""
+    """Runs a twitter-cli command, returns the unwrapped `data` list on
+    success, or None on failure. Never raises — a single failed call must
+    not kill the whole run.
+
+    twitter-cli wraps every response in an envelope rather than returning a
+    bare array:
+      {"ok": true,  "schema_version": "1", "data": [...]}
+      {"ok": false, "schema_version": "1", "error": {"code": ..., "message": ...}}
+    """
     cmd = ["twitter"] + args + ["--json"]
     try:
         result = subprocess.run(
@@ -65,7 +72,13 @@ def run_twitter_cli(args, env, timeout=30):
         if result.returncode != 0:
             print(f"[warn] {' '.join(cmd)} failed: {result.stderr[:300]}")
             return None
-        return json.loads(result.stdout)
+        envelope = json.loads(result.stdout)
+        if not envelope.get("ok"):
+            err = envelope.get("error", {})
+            print(f"[warn] {' '.join(cmd)} returned error: "
+                  f"{err.get('code')}: {str(err.get('message', ''))[:200]}")
+            return None
+        return envelope.get("data", [])
     except (subprocess.TimeoutExpired, json.JSONDecodeError) as e:
         print(f"[warn] {' '.join(cmd)} error: {e}")
         return None
