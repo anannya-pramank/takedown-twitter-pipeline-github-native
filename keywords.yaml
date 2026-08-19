@@ -1,0 +1,53 @@
+# Queries run against `twitter search`. Keep this list short — each query is
+# a separate call, and search is the least stable twitter-cli command.
+# Start narrow, widen once you see what fires.
+queries:
+  - "Section 69A"
+  - "Section 79 IT Act"
+  - "MeitY blocking order"
+  - "MeitY advisory"
+  - "IT Rules 2021 takedown"
+  - "IT Rules Amendment 2026"
+  - "Digital India Act"
+  - "content blocked India government"
+  - "website blocked India court order"
+  - "URL blocking order India"
+  - "DNS blocking India"
+  - "ISP blocking order India"
+  - "account withheld India"
+  - "X Corp withheld India"
+  - "internet shutdown order India"
+  - "app banned India government"
+  - "VPN banned India"
+  - "compliance report IT Rules"
+  - "grievance officer order India"
+  - "Grievance Appellate Committee order"
+  - "sealed cover order IT Rules"
+  - "intermediary liability India order"
+  - "safe harbour India court"
+  - "deepfake takedown order India"
+  - "fact check unit order"
+  - "DPDP Act takedown"
+  - "election commission content removal India"
+  - "satellite broadband blocked India"
+  - "OTT platform blocked India"
+  - "press freedom takedown India"
+  - "journalist account blocked India"
+
+# Timelines pulled with `twitter user-posts` instead — more stable than
+# search per Agent Reach's own docs, so this is the backbone, not the extra.
+handles:
+  - "IFF_India"        # Internet Freedom Foundation — tracks takedowns directly
+  - "medianama"         # India tech policy news
+  - "meityGoI"
+  - "SFLCin"             # Software Freedom Law Center India — legal tracking
+  - "internetfreedom"     # IFF's secondary/legacy handle, kept for coverage
+  - "editorsguildindia"    # press-freedom angle on takedowns
+  - "PUCLIndia"             # civil liberties org, occasionally flags orders
+  - "Entrackr"               # India tech/policy news, covers compliance reports
+  - "digitalfront_"           # digital rights commentary, India-focused
+
+# Results per call. Keep low — this is a monitoring feed, not bulk collection,
+# and every extra tweet is more proxy bandwidth + more relevance-gate calls.
+results_per_query: 15
+results_per_handle: 20
