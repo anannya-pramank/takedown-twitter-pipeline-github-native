@@ -54,6 +54,13 @@ queries:
   - "OTT platform blocked India"
   - "press freedom takedown India"
   - "journalist account blocked India"
+  # First-person alerts: none of the queries above catch someone reporting
+  # their *own* account/post/site getting a notice — they're all phrased
+  # around the law or the institution, not the recipient.
+  - "police asked me to (remove OR delete OR takedown OR \"take down\") India"
+  - "received a notice (police OR \"cyber cell\" OR MeitY OR \"IT Rules\") India"
+  - "my (account OR tweet OR post OR channel) (withheld OR blocked OR taken down) India (police OR government OR court OR MeitY)"
+  - "\"cyber cell\" notice account India"
 
 # Timelines pulled with `twitter user-posts` instead — more stable than
 # search per Agent Reach's own docs, so this is the backbone, not the extra.

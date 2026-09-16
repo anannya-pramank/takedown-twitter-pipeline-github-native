@@ -62,7 +62,7 @@ jobs:
 
       - name: Install twitter-cli
         run: |
-          pip install --no-cache-dir twitter-cli
+          pip install twitter-cli
           twitter --help >/dev/null
 
       # Known upstream bug (github.com/jackwener/twitter-cli): the
@@ -75,7 +75,7 @@ jobs:
         run: python fetch/patch_twitter_cli.py
 
       - name: Install fetch dependencies
-        run: pip install --no-cache-dir -r fetch/requirements.txt
+        run: pip install -r fetch/requirements.txt
 
       - name: Fetch tweets
         env:
@@ -112,8 +112,8 @@ jobs:
       # CUDA build (same reasoning the old Lambda Dockerfile had).
       - name: Install gate dependencies
         run: |
-          pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-          pip install --no-cache-dir -r process/requirements.txt
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r process/requirements.txt
 
       - name: Run relevance gate
         env:

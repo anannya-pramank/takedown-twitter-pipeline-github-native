@@ -163,7 +163,7 @@ def tier2_gemini_check(text, api_key):
     )
     resp = requests.post(
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash:generateContent?key={api_key}",
+        f"gemini-3.8-flash:generateContent?key={api_key}",
         json={"contents": [{"parts": [{"text": prompt}]}]},
         timeout=10,
     )
@@ -218,7 +218,10 @@ def process_item(item, model, reference_embeddings, gemini_api_key, cur):
                 is_relevant, raw_verdict = tier2_gemini_check(text, gemini_api_key)
             except Exception as e:
                 # Transient Gemini failure (rate limit, timeout, 5xx, bad JSON):
-                # keep for human review rather than dropping on a fluke.
+                # keep for human review rather than dropping on a fluke. Printed
+                # so a *persistent* failure (e.g. a retired model id) shows up
+                # in the run logs instead of silently defaulting every tweet.
+                print(f"[warn] gemini tier-2 call failed: {type(e).__name__}: {e}")
                 tier = "llm_reviewed"
                 llm_verdict = f"GEMINI_ERROR_DEFAULTED_KEEP:{type(e).__name__}"
             else:
