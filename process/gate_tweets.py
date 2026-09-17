@@ -35,6 +35,7 @@ Env vars expected (set by the workflow):
 import hashlib
 import json
 import os
+import time
 
 import psycopg2
 import requests
@@ -161,15 +162,26 @@ def tier2_gemini_check(text, api_key):
         "generally without describing an actual content block or takedown\n\n"
         f"Tweet: {text[:600]}"
     )
-    resp = requests.post(
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-3.8-flash:generateContent?key={api_key}",
-        json={"contents": [{"parts": [{"text": prompt}]}]},
-        timeout=10,
-    )
-    resp.raise_for_status()
-    out = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip().upper()
-    return out.startswith("YES"), out
+    # Paced + one retry on 429: fired once per ambiguous tweet (a few hundred
+    # per run), and free-tier RPM is low enough that back-to-back calls with
+    # no spacing exhaust it almost immediately.
+    try:
+        for attempt in range(2):
+            resp = requests.post(
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"gemini-3.8-flash:generateContent?key={api_key}",
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=10,
+            )
+            if resp.status_code == 429 and attempt == 0:
+                time.sleep(20)
+                continue
+            break
+        resp.raise_for_status()
+        out = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip().upper()
+        return out.startswith("YES"), out
+    finally:
+        time.sleep(4)  # pacing for the *next* item's call, success or failure
 
 
 def insert_row(cur, row):
