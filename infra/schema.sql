@@ -19,7 +19,7 @@ create table if not exists takedown_tweets (
     source_value    text not null,                 -- the query string or handle
     run_id          text not null,
     relevance_score real,                          -- tier-1 cosine similarity
-    relevance_tier  text not null,                  -- 'auto_keep' | 'auto_drop' | 'llm_reviewed'
+    relevance_tier  text not null,                  -- 'auto_keep' | 'rule_kept' | 'llm_reviewed' (legacy)
     llm_verdict     text,                            -- only set when tier-2 ran
     embedding       vector(384),                      -- all-MiniLM-L6-v2 dim
     discovered_at   timestamptz not null default now(),
@@ -40,6 +40,7 @@ select
     count(*) as total,
     count(*) filter (where relevance_tier = 'auto_keep') as auto_kept,
     count(*) filter (where relevance_tier = 'llm_reviewed') as llm_reviewed,
+    count(*) filter (where relevance_tier = 'rule_kept') as rule_kept,
     max(discovered_at) as last_seen
 from takedown_tweets
 group by source_type, source_value
