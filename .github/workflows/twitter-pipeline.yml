@@ -15,7 +15,6 @@ name: twitter-pipeline
 #        TWITTER_AUTH_TOKEN, TWITTER_CT0   - from the Cookie-Editor export
 #        PROXY_URL                          - Webshare proxy URL
 #        SUPABASE_DB_URL                    - postgresql://... connection string
-#        GEMINI_API_KEY                     - free tier is fine
 #   3. Confirm twitter-cli's package name + subcommands (search / user-posts
 #      / --json) still match your Agent Reach build before relying on this
 #      (same caveat as the old Dockerfile carried).
@@ -122,7 +121,6 @@ jobs:
           SUPABASE_DB_NAME: ${{ secrets.SUPABASE_DB_NAME }}
           SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           RAW_INPUT_PATH: ${{ env.RAW_PATH }}
           FAILED_OUTPUT_PATH: failed-items.json
         run: python process/gate_tweets.py

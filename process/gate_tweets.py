@@ -13,9 +13,9 @@ Two-tier gate, cheapest-first:
       score >= KEEP_THRESHOLD  -> auto_keep, no LLM call
       score <  DROP_THRESHOLD  -> auto_drop, no LLM call, not written to DB
       in between                -> ambiguous, escalate to tier 2
-  Tier 2 (only the ambiguous band): one short Gemini Flash call, free-tier
-    eligible, asking a single yes/no relevance question. A transient Gemini
-    failure keeps the tweet for human review rather than dropping it.
+  Tier 2 (only the ambiguous band, no API): keyword rule in rule.py -
+    blocking/takedown action + Indian state context, minus hypotheticals,
+    personal blocks and foreign stories. Kept rows get tier 'rule_kept'.
 
 Dedup: sha1(tweet_id) as primary key. Insert uses `on conflict (tweet_id) do
 nothing` directly — no pre-check SELECT — and reads cur.rowcount to tell
@@ -28,7 +28,6 @@ replay value without an actual queue.
 
 Env vars expected (set by the workflow):
   DATABASE_URL      - Supabase Postgres connection string (postgresql://...)
-  GEMINI_API_KEY    - optional; missing key defaults ambiguous tweets to keep
   RAW_INPUT_PATH    - the raw JSON file fetch_tweets.py just wrote
   FAILED_OUTPUT_PATH - where to write failed items for the artifact upload
 """
@@ -38,8 +37,9 @@ import os
 import time
 
 import psycopg2
-import requests
 from sentence_transformers import SentenceTransformer, util
+
+from rule import relevant
 
 KEEP_THRESHOLD = 0.58
 DROP_THRESHOLD = 0.40
@@ -122,68 +122,6 @@ def tier1_score(text, model, reference_embeddings):
     return float(sims.max()), embedding.cpu().numpy().tolist()
 
 
-def tier2_gemini_check(text, api_key):
-    """Single short call — asks for one word back to keep token usage minimal.
-    Raises on transport/HTTP/parse errors; the caller decides what to do with
-    a failure (here: keep for human review).
-
-    Exclusions below are anchored to real false positives observed in
-    production, not hypothetical ones: "Section 69A" collides with the
-    unrelated Income Tax Act provision constantly; generic e-commerce
-    complaints ("Grievance Officer, I am writing to lodge a complaint
-    regarding Order #...") share vocabulary with the IT Rules' Grievance
-    Officer mechanism; org accounts tracked via handles (IFF, SFLC, PUCL)
-    post heavily about adjacent-but-different topics (privacy law, arrests,
-    unrelated litigation) that share keywords without describing an actual
-    block/takedown."""
-    prompt = (
-        "Reply with exactly one word, YES or NO.\n\n"
-        "Does this tweet directly report, describe, or discuss a SPECIFIC "
-        "content-blocking, website/app-blocking, account-withholding, or "
-        "takedown action taken by an Indian government body, court, or "
-        "police unit? This includes (not just the IT-Act/MeitY framing): "
-        "national-security app bans (like the Chinese app bans), Delhi "
-        "High Court or other court orders against piracy/torrent sites, "
-        "state police cyber crime units withholding accounts for public "
-        "order/local law reasons, Ministry of Information & Broadcasting "
-        "action against obscene-content apps, blocks on illegal betting/"
-        "gambling sites, and defamation-driven takedowns of specific posts. "
-        "Reporting on or analyzing a real blocking/takedown trend (e.g. "
-        "aggregate statistics on order volume) counts as YES even without "
-        "naming one specific instance.\n\n"
-        "Answer NO if the tweet:\n"
-        "- uses a similarly-worded but unrelated law (Income Tax Act "
-        "Section 69A on unexplained money, GST Section 69, or any non-IT-Act "
-        "statute)\n"
-        "- is a generic e-commerce or customer-service complaint, even if "
-        "it uses the phrase \"grievance officer\" or \"order\"\n"
-        "- is about a country other than India\n"
-        "- discusses privacy law, digital rights, arrests, or litigation "
-        "generally without describing an actual content block or takedown\n\n"
-        f"Tweet: {text[:600]}"
-    )
-    # Paced + one retry on 429: fired once per ambiguous tweet (a few hundred
-    # per run), and free-tier RPM is low enough that back-to-back calls with
-    # no spacing exhaust it almost immediately.
-    try:
-        for attempt in range(2):
-            resp = requests.post(
-                "https://generativelanguage.googleapis.com/v1beta/models/"
-                f"gemini-3.8-flash:generateContent?key={api_key}",
-                json={"contents": [{"parts": [{"text": prompt}]}]},
-                timeout=10,
-            )
-            if resp.status_code == 429 and attempt == 0:
-                time.sleep(20)
-                continue
-            break
-        resp.raise_for_status()
-        out = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip().upper()
-        return out.startswith("YES"), out
-    finally:
-        time.sleep(4)  # pacing for the *next* item's call, success or failure
-
-
 def insert_row(cur, row):
     """Returns True if a new row was actually inserted, False if the
     tweet_id already existed (on conflict do nothing)."""
@@ -207,7 +145,7 @@ def insert_row(cur, row):
     return cur.rowcount == 1
 
 
-def process_item(item, model, reference_embeddings, gemini_api_key, cur):
+def process_item(item, model, reference_embeddings, cur):
     """Returns one of: 'kept' | 'dropped' | 'skipped' | None (empty item).
     Raises on anything the caller should log to failed-items.json."""
     tweet_id = str(item.get("id") or item.get("tweet_id") or "")
@@ -222,24 +160,12 @@ def process_item(item, model, reference_embeddings, gemini_api_key, cur):
     elif score < DROP_THRESHOLD:
         return "dropped"  # never written — keeps the table free of obvious noise
     else:
-        if not gemini_api_key:
-            # no key configured -> keep for human review rather than silently drop
-            tier, llm_verdict = "llm_reviewed", "NO_API_KEY_DEFAULTED_KEEP"
-        else:
-            try:
-                is_relevant, raw_verdict = tier2_gemini_check(text, gemini_api_key)
-            except Exception as e:
-                # Transient Gemini failure (rate limit, timeout, 5xx, bad JSON):
-                # keep for human review rather than dropping on a fluke. Printed
-                # so a *persistent* failure (e.g. a retired model id) shows up
-                # in the run logs instead of silently defaulting every tweet.
-                print(f"[warn] gemini tier-2 call failed: {type(e).__name__}: {e}")
-                tier = "llm_reviewed"
-                llm_verdict = f"GEMINI_ERROR_DEFAULTED_KEEP:{type(e).__name__}"
-            else:
-                tier, llm_verdict = "llm_reviewed", raw_verdict
-                if not is_relevant:
-                    return "dropped"
+        # Tier 2 (API-free): keyword rule tuned on hand-labelled tweets from this
+        # band, see rule.py. ponytail: regex precision ~0.5 / recall ~0.9; retune
+        # rule.py from a fresh labelled sample if the keyword mix drifts.
+        if not relevant(text):
+            return "dropped"
+        tier, llm_verdict = "rule_kept", None
 
     author = item.get("author")
     if isinstance(author, dict):
@@ -295,7 +221,6 @@ def main():
 
     model = SentenceTransformer("all-MiniLM-L6-v2")
     reference_embeddings = model.encode(REFERENCE_SENTENCES, convert_to_tensor=True)
-    gemini_api_key = os.environ.get("GEMINI_API_KEY")
 
     conn = get_db_connection()
     conn.autocommit = True
@@ -306,7 +231,7 @@ def main():
 
     for item in items:
         try:
-            outcome = process_item(item, model, reference_embeddings, gemini_api_key, cur)
+            outcome = process_item(item, model, reference_embeddings, cur)
             if outcome == "kept":
                 kept += 1
             elif outcome == "dropped":
